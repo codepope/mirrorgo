@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/nlopes/slack"
 )
@@ -17,16 +18,16 @@ func main() {
 
 	api := slack.New(
 		key,
-		slack.OptionDebug(true),
+		//		slack.OptionDebug(true),
 		slack.OptionLog(log.New(os.Stdout, "slack-bot: ", log.Lshortfile|log.LstdFlags)),
 	)
 
 	fmt.Println("Got API and...")
 
-	// Who am I?
-	buildUserCache(api)
-	fmt.Printf("I am %s\n", iam.ID)
-	fmt.Printf("%+v\n", iam)
+	// // Who am I?
+	// buildUserCache(api)
+	// fmt.Printf("I am %s\n", iam.ID)
+	// fmt.Printf("%+v\n", iam)
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
 
@@ -38,12 +39,13 @@ func main() {
 
 		case *slack.ConnectedEvent:
 			fmt.Println("Infos:", ev.Info)
+			processInfo(ev.Info)
 			fmt.Println("Connection counter:", ev.ConnectionCount)
 			// Replace C2147483705 with your Channel ID
 			rtm.SendMessage(rtm.NewOutgoingMessage("Hello world", "C2147483705"))
 
 		case *slack.MessageEvent:
-			fmt.Printf("Message: %v\n", ev)
+			fmt.Printf("Message: %+v\n", ev)
 			processMessageEvent(ev)
 
 		case *slack.PresenceChangeEvent:
@@ -68,25 +70,46 @@ func main() {
 
 }
 
+var cachedInfo *slack.Info
 var cachedUsers []slack.User
-var iam slack.User
+var iam *slack.UserDetails
+var imatchid string
 
-func buildUserCache(api *slack.Client) {
-	users, err := api.GetUsers()
-	if err != nil {
-		log.Fatal(err)
-	}
-	cachedUsers = users
+func processInfo(info *slack.Info) {
 
-	for _, user := range cachedUsers {
-		if user.Name == "mirrorgo" {
-			iam = user
-			return
+	fmt.Printf("%+v\n", info)
+	cachedInfo = info
+
+	iam = info.User
+	imatchid = "<@" + iam.ID + ">"
+
+	fmt.Println(info.Channels)
+	fmt.Println(imatchid)
+}
+
+var ignorableTypes = []string{"error", "group_join", "member_joined_channel", "file_created", "hello", "desktop_notification", "user_typing", "file_public", "bot_added", "bot_changed", "apps_changed", "apps_installed", "user_change"}
+
+func processMessageEvent(ev *slack.MessageEvent) {
+
+	ignorable := false
+
+	for _, v := range ignorableTypes {
+		if strings.Compare(v, ev.Type) == 0 {
+			ignorable = true
+			break
 		}
 	}
-}
-func processMessageEvent(ev *slack.MessageEvent) {
-	switch ev.Type {
 
+	if ignorable {
+		fmt.Printf("Ignoring %s\n", ev.Type)
+		return
 	}
+
+	fmt.Printf("%s %s\n", imatchid, ev.Text)
+	if strings.Contains(ev.Text, imatchid) {
+		fmt.Printf("Mentions me %+v\n", ev)
+	} else {
+		fmt.Println("Something else")
+	}
+
 }
